@@ -1,4 +1,5 @@
 """Define common namespaces"""
+from typing import Dict
 
 NAMESPACES = {
     'xmlns:dc': 'http://purl.org/dc/elements/1.1/',
@@ -7,7 +8,7 @@ NAMESPACES = {
     'DIDL-Lite': 'urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/',
 }
 
-def get_ns(*namespaces):
+def get_ns(*namespaces: str) -> Dict[str, str]:
     """Helper to return pre-defined XML namespaces"""
     res = {}
     for ns_ in namespaces:

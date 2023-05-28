@@ -1,10 +1,12 @@
 """Content Directory"""
 import asyncio
-from typing import Dict, Optional, Callable, Awaitable
+import logging
+
+from typing import Dict, Optional, Callable, Any, AsyncIterable, cast
 from collections import defaultdict
 import xml.etree.ElementTree as ET
 
-from async_upnp_client.client import UpnpStateVariable
+from async_upnp_client.client import UpnpStateVariable, UpnpDevice, UpnpEventableStateVariable
 from async_upnp_client.const import ServiceInfo
 
 from async_upnp_client.server import UpnpServerService, callable_action
@@ -27,7 +29,7 @@ FEATURE_STR = """<?xml version="1.0" encoding="UTF-8"?>
 
 class ContentDirectoryService(UpnpServerService):
     """DLNA Content Directory."""
-    SCANNER: Optional[Callable[[], Awaitable[str]]] = None
+    SCANNER: Optional[Callable[[BaseItem, UpnpDevice], AsyncIterable[BaseItem]]] = None
     SERVICE_DEFINITION = ServiceInfo(
         service_id="urn:upnp-org:serviceId:ContentDirectory",
         service_type="urn:schemas-upnp-org:service:ContentDirectory:2",
@@ -78,6 +80,7 @@ class ContentDirectoryService(UpnpServerService):
         try:
             objectid = int(ObjectID)
             parent = self._item_map[objectid]
+            assert isinstance(parent, DirectoryItem)
             root =  ET.Element("DIDL-Lite", get_ns('dc', 'upnp', 'DIDL-Lite'))
             for child in sorted(parent.children, key=lambda x: x.name):
                 root.append(await child.xml())
@@ -147,19 +150,19 @@ class ContentDirectoryService(UpnpServerService):
             "Id": self.state_variable("SystemUpdateID"),
         }
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize"""
         super().__init__(*args, **kwargs)
         self._root_item = DirectoryItem(None, None)
-        self._item_map = {0: self._root_item, self._root_item.object_id: self._root_item}
+        self._item_map: Dict[int, BaseItem] = {0: self._root_item, self._root_item.object_id: self._root_item}
         self._scan_task = asyncio.create_task(self._start_scan())
 
-    async def _start_scan(self):
+    async def _start_scan(self) -> None:
         if not self.SCANNER:
             return
-        updates = defaultdict(int)
+        updates: Dict[int, int] = defaultdict(int)
         system_update_id = self.state_variable('SystemUpdateID')
-        container_update_ids = self.state_variable('ContainerUpdateIDs')
+        container_update_ids = cast(UpnpEventableStateVariable, self.state_variable('ContainerUpdateIDs'))
         async for item in self.SCANNER(self._root_item, self.device):  # pylint: disable=not-callable
             if container_update_ids.event_triggered.is_set():
                 updates.clear()
@@ -167,14 +170,14 @@ class ContentDirectoryService(UpnpServerService):
             self._item_map[item.object_id] = item
             updates[item.parent.object_id] = item.parent.update_id
             container_update_ids.value = self.build_container_update_ids(updates)
-            system_update_id.value += 1
-        print("Done scanning")
+            system_update_id.value += 1  # type: ignore [operator]
+        logging.debug("Done scanning")
 
     def get_item(self, object_id: int) -> Optional[BaseItem]:
         """Get item from object_id."""
         return self._item_map.get(object_id)
 
     @staticmethod
-    def build_container_update_ids(updates):
+    def build_container_update_ids(updates: dict[int, int]) -> Any:
         """Create CSV value for ContainerUpdateIDs"""
         return ",".join([f"{_id},{_val}" for _id, _val in updates.items()])

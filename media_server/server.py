@@ -10,14 +10,16 @@ import argparse
 from time import time
 from functools import partial
 from http import HTTPStatus
-
+from typing import cast, Callable, Type, Tuple, Optional
 from aiohttp import web
-from async_generator import async_generator, yield_
+from multidict import CIMultiDictProxy
+
+from async_generator import async_generator, yield_  # type: ignore [import]
 
 from async_upnp_client.client import UpnpRequester
 from async_upnp_client.const import DeviceInfo
 from async_upnp_client.server import UpnpServer, UpnpServerDevice
-from .items import set_base_url
+from .items import set_base_url, AudioItem
 from .content_directory import ContentDirectoryService
 from .connection_manager import ConnectionManagerService
 from .scan_paths import scan_paths
@@ -50,7 +52,7 @@ class MediaServerDevice(UpnpServerDevice):
     SERVICES = [ConnectionManagerService, ContentDirectoryService]
     _routes = web.RouteTableDef()
 
-    def __init__(self, audio_extractor_cls: AudioExtractor, requester: UpnpRequester,
+    def __init__(self, audio_extractor_cls: Callable[[], None], requester: UpnpRequester,
                  base_uri: str, boot_id: int, config_id: int) -> None:
         """Initialize."""
         # pylint: disable=(too-many-arguments)
@@ -64,12 +66,12 @@ class MediaServerDevice(UpnpServerDevice):
         # route decorator doesn't support instance-methods natively
         # so convert static-method call to instance method call here
         self.ROUTES = [  # pylint: disable=invalid-name
-            web.RouteDef(route.method, route.path, partial(route.handler, self), route.kwargs)
+            web.RouteDef(route.method, route.path, partial(route.handler, self), route.kwargs)  # type: ignore [attr-defined]
             for route in self._routes]
         self._content_dir = next(svc for svc in self.services.values() if isinstance(svc, ContentDirectoryService))
         self.audio_extractor = audio_extractor_cls()
 
-    @_routes.get(r"/content/{object_id:\d+}/{media_type}")
+    @_routes.get(r"/content/{object_id:\d+}/{media_type}")   # type: ignore [arg-type]
     async def handle_media(self, request: web.Request) -> web.Response:
         """URL handler for streaming media"""
         object_id = int(request.match_info['object_id'])
@@ -77,13 +79,15 @@ class MediaServerDevice(UpnpServerDevice):
         item = self._content_dir.get_item(object_id)
         if not item:
             raise web.HTTPNotFound
+        assert isinstance(item, AudioItem)
         if request.method == 'HEAD':
-            return
+            raise web.HTTPOk()
 
         _path = await item.get_path()
 
         @async_generator
-        async def generate(chunk_size=2**16):  # Default to 64k chunks
+        async def generate(chunk_size: int=2**16) -> None:
+            # Default to 64k chunks
             with open(_path, 'rb') as _f:
                 _f.seek(start)
                 for data in iter(partial(_f.read, chunk_size), b''):
@@ -95,8 +99,9 @@ class MediaServerDevice(UpnpServerDevice):
         mime_type = item.mime_type
         end = item.size if end is None else end
         size = str(end-start)
+        assert mime_type
 
-        headers = {'Content-Length': size, 'Content-Type': mime_type, 'Accept-Ranges': 'bytes',
+        headers: dict[str, str] = {'Content-Length': size, 'Content-Type': mime_type, 'Accept-Ranges': 'bytes',
                    # DLNA.ORG_OP = Time range capable / Byte range capable
                    'Contentfeatures.dlna.org': 'DLNA.ORG_OP=01'  # TV will try to read entire file without this
                    }
@@ -109,7 +114,7 @@ class MediaServerDevice(UpnpServerDevice):
         return response
 
     @staticmethod
-    def get_range(headers):
+    def get_range(headers: CIMultiDictProxy[str]) -> Tuple[bool, int, Optional[int]]:
         """Get requested byte range from headers"""
         byte_range = headers.get('Range', headers.get('range'))
         match = None if not byte_range else re.match(r'bytes=(?P<start>\d+)-(?P<end>\d+)?', byte_range)
@@ -122,13 +127,13 @@ class MediaServerDevice(UpnpServerDevice):
             end = int(end)
         return True, start, end
 
-async def async_main(server):
+async def async_main(server: UpnpServer) -> None:
     """Async entrypoint."""
     await server.async_start()
     while True:
         await asyncio.sleep(3600)
 
-def main():
+def main() -> None:
     """Entrypoint"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", required=True, nargs='+', help="Media paths to serve")
@@ -145,7 +150,7 @@ def main():
     boot_id = int(time())
     config_id = 1
     audio_extractor_partial = partial(AudioExtractor, args.dbfile, args.cache_dir, args.max_cache_size)
-    msd_partial = partial(MediaServerDevice, audio_extractor_partial)
+    msd_partial = cast(Type[UpnpServerDevice], partial(MediaServerDevice, audio_extractor_partial))
     ContentDirectoryService.SCANNER = partial(scan_paths, args.media)
     server = UpnpServer(msd_partial, (args.host, 0), http_port=args.port, boot_id=boot_id, config_id=config_id)
 
