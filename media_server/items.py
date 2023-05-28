@@ -1,6 +1,7 @@
 """Item types for ContentDirectory"""
 
 # pylint: disable=too-few-public-methods
+import asyncio
 import os
 import mimetypes
 import xml.etree.ElementTree as ET
@@ -50,8 +51,7 @@ class BaseItem:
         """Item name"""
         return os.path.basename(self._path)
 
-    @property
-    def path(self):
+    async def get_path(self):
         """Item full path"""
         return self._path
 
@@ -60,8 +60,7 @@ class BaseItem:
         """Item size"""
         return self._size
 
-    @property
-    def xml(self):
+    async def xml(self):
         root = ET.Element(self._type, {'id': f'{self._id}', 'restricted': '0'})
         if self._parent:
             root.attrib['parentID'] = f'{self._parent.object_id}'
@@ -98,8 +97,7 @@ class DirectoryItem(BaseItem):
     def children(self):
         return self._children.copy()
 
-    @property
-    def xml(self):
+    async def xml(self):
         """Container description
         <container id=\"1001\" parentID=\"1000\" restricted=\"0\" childCount=\"33\">
           <dc:title>DIR_NAME</dc:title>
@@ -111,7 +109,7 @@ class DirectoryItem(BaseItem):
           >http://.../1001?cover.jpg</upnp:albumArtURI>
         </container>
         """
-        root = super().xml
+        root = await super().xml()
         root.attrib['childCount'] = f'{len(self._children)}'
         ET.SubElement(root, 'upnp:class').text = 'object.container'
         return root
@@ -119,9 +117,6 @@ class DirectoryItem(BaseItem):
     @property
     def update_id(self):
         return self._update_id
-
-class TranscodeItem(BaseItem):
-    """Video item that will be transcoded on playback"""
 
 class AudioItem(BaseItem):
     """Audio  item"""
@@ -134,8 +129,7 @@ class AudioItem(BaseItem):
         """Mime type"""
         return self._mimetype
 
-    @property
-    def xml(self):
+    async def xml(self):
         """
         <item id=\"1030.flac\" parentID=\"1001\" restricted=\"0\">
           <dc:title>01. Sgt. Pepper's Lonely Hearts Club Band (Remix).flac</dc:title>
@@ -146,9 +140,48 @@ class AudioItem(BaseItem):
           <res protocolInfo=\"internal:192.168.1.85:audio/flac:*\" size=\"13866930\">file:///mnt/music/FLAC/The%20Beatles%20-%20Sgt.%20Pepper%27s%20Lonely%20H%20Club%20Band%20%28DE%29%20%282017%29%20FLAC/01.%20Sgt.%20Pepper%27s%20Lonely%20Hearts%20Club%20Band%20%28Remix%29.flac</res>
         </item>
         """
-        root = super().xml
+        root = await super().xml()
         ET.SubElement(root, 'upnp:class').text = 'object.item.audioItem'
         protocol_info = f'http-get:*:{self._mimetype}:*'
         media = ET.SubElement(root, 'res', {'protocolInfo': protocol_info, 'size': f"{self._size}"})
         media.text = get_url(self, 'media')
         return root
+
+class TranscodeItem(AudioItem):
+    """Video item that will be transcoded on playback"""
+    def __init__(self, parent, path, audio_extractor):
+        super().__init__(parent, path)
+        self._audio_extractor = audio_extractor
+        self._probe = asyncio.create_task(audio_extractor.probe(path))
+        self._mimetype = None
+        self._audioext = None
+        self._size = None
+
+    async def get_path(self):
+        path = await self._audio_extractor.get_path(self._path)
+        if self._size is None:
+            self._size = os.stat(path).st_size
+        if self._mimetype is None:
+            self._mimetype = self._mimetype, _ = mimetypes.guess_type(path)
+        return path
+
+    @property
+    def size(self):
+        """Item size"""
+        if self._size is None:
+            return 0
+        return self._size
+
+    @property
+    def name(self):
+        if self._audioext:
+            return os.path.basename(self._path).rsplit('.', 1)[0] + f'.{self._audioext}'
+        return super().name
+
+    async def xml(self):
+        if self._probe:
+            self._audioext = await self._probe
+            self._probe = None
+            self._mimetype, _ = mimetypes.guess_type(f"media_file.{self._audioext}", strict=False)
+        return await super().xml()
+

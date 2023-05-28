@@ -6,8 +6,9 @@ from typing import List, Dict
 
 from .items import BaseItem, DirectoryItem, TranscodeItem, AudioItem
 
-async def scan_paths(paths: List[str], root_item):
+async def scan_paths(paths: List[str], root_item, device):
     """Async generator to generate BaseItems"""
+    audio_extractor = device.audio_extractor
     for path in paths:
         dir_cache:Dict[str, BaseItem] = {}
         if path.endswith('/') and path != '/':
@@ -28,7 +29,7 @@ async def scan_paths(paths: List[str], root_item):
                 if not mime_type:
                     continue
                 if mime_type.startswith('video/'):
-                    child = TranscodeItem(item, full_path)
+                    child = TranscodeItem(item, full_path, audio_extractor)
                 elif mime_type.startswith("audio/"):
                     child = AudioItem(item, full_path)
                 else:

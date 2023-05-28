@@ -3,6 +3,7 @@ import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
+import argparse
 
 from time import time
 from functools import partial
@@ -18,6 +19,7 @@ from .items import set_base_url
 from .content_directory import ContentDirectoryService
 from .connection_manager import ConnectionManagerService
 from .scan_paths import scan_paths
+from .audio_extract import AudioExtractor
 
 SOURCE = ("192.168.1.85", 0)  # Your IP here!
 HTTP_PORT = 8000
@@ -46,7 +48,7 @@ class MediaServerDevice(UpnpServerDevice):
     SERVICES = [ConnectionManagerService, ContentDirectoryService]
     _routes = web.RouteTableDef()
 
-    def __init__(self, requester: UpnpRequester, base_uri: str, boot_id: int, config_id: int) -> None:
+    def __init__(self, audio_extractor_cls: AudioExtractor, requester: UpnpRequester, base_uri: str, boot_id: int, config_id: int) -> None:
         """Initialize."""
         super().__init__(
             requester=requester,
@@ -54,10 +56,12 @@ class MediaServerDevice(UpnpServerDevice):
             boot_id=boot_id,
             config_id=config_id,
         )
+        set_base_url(base_uri)
         # route decorator doesn't support instance-methods natively
         # so convert static-method call to instance method call here
         self.ROUTES =[web.RouteDef(route.method, route.path, partial(route.handler, self), route.kwargs) for route in self._routes]
         self._content_dir = next(svc for svc in self.services.values() if isinstance(svc, ContentDirectoryService))
+        self.audio_extractor = audio_extractor_cls()
 
     @_routes.get("/content/{object_id:\d+}/{media_type}")
     async def handle_media(self, request: web.Request) -> web.Response:
@@ -66,7 +70,12 @@ class MediaServerDevice(UpnpServerDevice):
         item = self._content_dir.get_item(object_id)
         if not item:
             raise web.HTTPNotFound
-            
+        if request.method == 'HEAD':
+            return  
+
+        print(f"Streaming media for {item.name}")
+        _path = await item.get_path()
+
         @async_generator
         async def generate(chunk_size=2**16):  # Default to 64k chunks
             with open(_path, 'rb') as f:
@@ -74,7 +83,9 @@ class MediaServerDevice(UpnpServerDevice):
                 for data in iter(partial(f.read, chunk_size), b''):
                     await yield_(data)
 
-        _path = item.path
+        if not _path:
+            raise web.HTTPNotFound
+        print(f"Ready to stream")
         part, start, end = self.get_range(request.headers)
         mime_type = item.mime_type
         end = item.size if end is None else end
@@ -86,6 +97,7 @@ class MediaServerDevice(UpnpServerDevice):
                    }
         if part:
             headers['Content-Range'] = f'bytes {start}-{end-1}/{size}'
+        print(headers)
         response = web.Response(body=generate(), status=HTTPStatus.PARTIAL_CONTENT if part else HTTPStatus.OK, headers=headers)#, direct_passthrough=True)
         return response
 
@@ -110,14 +122,25 @@ async def async_main(server):
 
 def main():
     """Entrypoint"""
-    logging.basicConfig(level=logging.DEBUG)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--media", required=True, nargs='+', help="Media paths to serve")
+    parser.add_argument("--host", required=True, help="Host IP address to listen on")
+    parser.add_argument("--port", type=int, default = 8000, help="Port to listen on")
+    parser.add_argument("--dbfile", default="cache.sqlite", help="Database file for caching audio-extractor")
+    parser.add_argument("--cache_dir", default="/tmp/audio_cache", help="Directory for audio-extractor to chache files")
+    parser.add_argument("--max-cache-size", type=int, default=1_000_000_000, help="Maximum cache size for auido-extractor")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     logging.getLogger("async_upnp_client.traffic").setLevel(logging.WARNING)
+
     boot_id = int(time())
     config_id = 1
-    set_base_url(f"http://{SOURCE[0]}:{HTTP_PORT}")
+    audio_extractor_partial = partial(AudioExtractor, args.dbfile, args.cache_dir, args.max_cache_size)
+    msd_partial = partial(MediaServerDevice, audio_extractor_partial)
+    ContentDirectoryService.SCANNER = partial(scan_paths, args.media)
+    server = UpnpServer(msd_partial, (args.host, 0), http_port=args.port, boot_id=boot_id, config_id=config_id)
 
-    ContentDirectoryService.SCANNER = partial(scan_paths, ["/mnt/music/FLAC/"])
-    server = UpnpServer(MediaServerDevice, SOURCE, http_port=HTTP_PORT, boot_id=boot_id, config_id=config_id)
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(async_main(server))

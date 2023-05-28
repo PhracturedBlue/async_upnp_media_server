@@ -80,8 +80,8 @@ class ContentDirectoryService(UpnpServerService):
             objectid = int(ObjectID)
             parent = self._item_map[objectid]
             root =  ET.Element("DIDL-Lite", get_ns('dc', 'upnp', 'DIDL-Lite'))
-            for child in parent.children:
-                root.append(child.xml)
+            for child in sorted(parent.children, key=lambda x: x.name):
+                root.append(await child.xml())
             xml = ET.tostring(root).decode()
             if isinstance(parent, DirectoryItem):
                 update_id = parent.update_id
@@ -162,7 +162,7 @@ class ContentDirectoryService(UpnpServerService):
         updates = defaultdict(int)
         system_update_id = self.state_variable('SystemUpdateID')
         container_update_ids = self.state_variable('ContainerUpdateIDs')
-        async for item in self.SCANNER(self._root_item):  # pylint: disable=not-callable
+        async for item in self.SCANNER(self._root_item, self.device):  # pylint: disable=not-callable
             if container_update_ids.event_triggered.is_set():
                 updates.clear()
                 container_update_ids.event_triggered.clear()
