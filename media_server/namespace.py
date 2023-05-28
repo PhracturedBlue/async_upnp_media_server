@@ -8,6 +8,7 @@ NAMESPACES = {
 }
 
 def get_ns(*namespaces):
+    """Helper to return pre-defined XML namespaces"""
     res = {}
     for ns_ in namespaces:
         if val := NAMESPACES.get(f'xmlns:{ns_}'):

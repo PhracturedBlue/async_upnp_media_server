@@ -9,9 +9,11 @@ from datetime import datetime
 from .namespace import get_ns
 
 def get_url(item, mediatype):
+    """Get full URL of item"""
     return f"{BaseItem.base_url}/content/{item.object_id}/{mediatype}"
 
 def set_base_url(url):
+    """Set the current URI as a static class variable for easy access"""
     BaseItem.base_url = url
 
 class BaseItem:
@@ -61,6 +63,7 @@ class BaseItem:
         return self._size
 
     async def xml(self):
+        """Return XML describing item"""
         root = ET.Element(self._type, {'id': f'{self._id}', 'restricted': '0'})
         if self._parent:
             root.attrib['parentID'] = f'{self._parent.object_id}'
@@ -95,6 +98,7 @@ class DirectoryItem(BaseItem):
 
     @property
     def children(self):
+        """Return child objects"""
         return self._children.copy()
 
     async def xml(self):
@@ -116,6 +120,7 @@ class DirectoryItem(BaseItem):
 
     @property
     def update_id(self):
+        """Get he number of times this item has changed"""
         return self._update_id
 
 class AudioItem(BaseItem):
@@ -135,9 +140,16 @@ class AudioItem(BaseItem):
           <dc:title>01. Sgt. Pepper's Lonely Hearts Club Band (Remix).flac</dc:title>
           <upnp:class>object.item.audioItem</upnp:class>
           <dc:date>2022-07-20T05:44:08</dc:date>
-          <upnp:albumArtURI xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0\" dlna:profileID=\"JPEG_TN\">http://192.168.1.85:8080/04dd87a0-eb71-4b3e-acd6-d9550c09d398/1030.flac?cover.jpg</upnp:albumArtURI>
-          <res protocolInfo=\"http-get:*:audio/flac:*\" size=\"13866930\">http://192.168.1.85:8080/04dd87a0-eb71-4b3e-acd6-d9550c09d398/1030.flac</res>
-          <res protocolInfo=\"internal:192.168.1.85:audio/flac:*\" size=\"13866930\">file:///mnt/music/FLAC/The%20Beatles%20-%20Sgt.%20Pepper%27s%20Lonely%20H%20Club%20Band%20%28DE%29%20%282017%29%20FLAC/01.%20Sgt.%20Pepper%27s%20Lonely%20Hearts%20Club%20Band%20%28Remix%29.flac</res>
+          <upnp:albumArtURI
+           xmlns:dlna=\"urn:schemas-dlna-org:metadata-1-0\"
+           dlna:profileID=\"JPEG_TN\"
+          >http://{URL}/1030.flac?cover.jpg</upnp:albumArtURI>
+          <res protocolInfo=\"http-get:*:audio/flac:*\" size=\"13866930\">
+              http://{URL}/1030.flac
+          </res>
+          <res protocolInfo=\"internal:192.168.1.2:audio/flac:*\" size=\"13866930\">
+              file://{PATH}
+          </res>
         </item>
         """
         root = await super().xml()
@@ -158,6 +170,7 @@ class TranscodeItem(AudioItem):
         self._size = None
 
     async def get_path(self):
+        """Get full-path to item"""
         path = await self._audio_extractor.get_path(self._path)
         if self._size is None:
             self._size = os.stat(path).st_size
@@ -174,14 +187,15 @@ class TranscodeItem(AudioItem):
 
     @property
     def name(self):
+        """Item name"""
         if self._audioext:
             return os.path.basename(self._path).rsplit('.', 1)[0] + f'.{self._audioext}'
         return super().name
 
     async def xml(self):
+        """Create XML for item"""
         if self._probe:
             self._audioext = await self._probe
             self._probe = None
             self._mimetype, _ = mimetypes.guess_type(f"media_file.{self._audioext}", strict=False)
         return await super().xml()
-

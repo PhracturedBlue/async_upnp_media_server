@@ -1,13 +1,11 @@
 """Connection Manager"""
-import asyncio
 import xml.etree.ElementTree as ET
 from typing import Dict
 from async_upnp_client.client import UpnpStateVariable
 from async_upnp_client.const import ServiceInfo
 
 from async_upnp_client.server import UpnpServerService, callable_action
-from async_upnp_client.server import create_template_var, create_state_var, create_event_var
-from async_upnp_client.exceptions import UpnpActionError, UpnpActionErrorCode
+from async_upnp_client.server import create_template_var, create_event_var
 
 # pylint: disable=too-many-arguments
 # pylint: disable=invalid-name
@@ -44,6 +42,7 @@ class ConnectionManagerService(UpnpServerService):
         },
     )
     async def get_protocol_info(self) -> Dict[str, UpnpStateVariable]:
+        """Get supported protocols"""
         return {
             "Source": self.state_variable('SourceProtocolInfo'),
             "Sink": self.state_variable('SinkProtocolInfo'),
@@ -56,6 +55,7 @@ class ConnectionManagerService(UpnpServerService):
         },
     )
     async def get_current_connection_ids(self) -> Dict[str, UpnpStateVariable]:
+        """Get current connections"""
         return {
             "ConnectionIDs": self.state_variable('CurrentConnectionIDs'),
             }
@@ -72,6 +72,7 @@ class ConnectionManagerService(UpnpServerService):
         },
     )
     async def get_current_connection_info(self, ConnectionID: int) -> Dict[str, UpnpStateVariable]:
+        """Get current conntion information"""
         return {
             "ResID": self.template_var("A_ARG_TYPE_ResID", ""),
             "AVTransportID": self.template_var("A_ARG_TYPE_AVTransportID", ""),

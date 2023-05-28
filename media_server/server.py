@@ -1,4 +1,6 @@
 """Media Server Device"""
+# Many parts of this are based upon https://github.com/shaolo1/VideoServer
+
 import asyncio
 import logging
 import re
@@ -48,8 +50,10 @@ class MediaServerDevice(UpnpServerDevice):
     SERVICES = [ConnectionManagerService, ContentDirectoryService]
     _routes = web.RouteTableDef()
 
-    def __init__(self, audio_extractor_cls: AudioExtractor, requester: UpnpRequester, base_uri: str, boot_id: int, config_id: int) -> None:
+    def __init__(self, audio_extractor_cls: AudioExtractor, requester: UpnpRequester,
+                 base_uri: str, boot_id: int, config_id: int) -> None:
         """Initialize."""
+        # pylint: disable=(too-many-arguments)
         super().__init__(
             requester=requester,
             base_uri=base_uri,
@@ -59,33 +63,34 @@ class MediaServerDevice(UpnpServerDevice):
         set_base_url(base_uri)
         # route decorator doesn't support instance-methods natively
         # so convert static-method call to instance method call here
-        self.ROUTES =[web.RouteDef(route.method, route.path, partial(route.handler, self), route.kwargs) for route in self._routes]
+        self.ROUTES = [  # pylint: disable=invalid-name
+            web.RouteDef(route.method, route.path, partial(route.handler, self), route.kwargs)
+            for route in self._routes]
         self._content_dir = next(svc for svc in self.services.values() if isinstance(svc, ContentDirectoryService))
         self.audio_extractor = audio_extractor_cls()
 
-    @_routes.get("/content/{object_id:\d+}/{media_type}")
+    @_routes.get(r"/content/{object_id:\d+}/{media_type}")
     async def handle_media(self, request: web.Request) -> web.Response:
+        """URL handler for streaming media"""
         object_id = int(request.match_info['object_id'])
-        media_type = request.match_info['media_type']
+        # media_type = request.match_info['media_type']
         item = self._content_dir.get_item(object_id)
         if not item:
             raise web.HTTPNotFound
         if request.method == 'HEAD':
-            return  
+            return
 
-        print(f"Streaming media for {item.name}")
         _path = await item.get_path()
 
         @async_generator
         async def generate(chunk_size=2**16):  # Default to 64k chunks
-            with open(_path, 'rb') as f:
-                f.seek(start)
-                for data in iter(partial(f.read, chunk_size), b''):
+            with open(_path, 'rb') as _f:
+                _f.seek(start)
+                for data in iter(partial(_f.read, chunk_size), b''):
                     await yield_(data)
 
         if not _path:
             raise web.HTTPNotFound
-        print(f"Ready to stream")
         part, start, end = self.get_range(request.headers)
         mime_type = item.mime_type
         end = item.size if end is None else end
@@ -98,11 +103,14 @@ class MediaServerDevice(UpnpServerDevice):
         if part:
             headers['Content-Range'] = f'bytes {start}-{end-1}/{size}'
         print(headers)
-        response = web.Response(body=generate(), status=HTTPStatus.PARTIAL_CONTENT if part else HTTPStatus.OK, headers=headers)#, direct_passthrough=True)
+        response = web.Response(
+            body=generate(),
+            status=HTTPStatus.PARTIAL_CONTENT if part else HTTPStatus.OK, headers=headers)
         return response
 
     @staticmethod
     def get_range(headers):
+        """Get requested byte range from headers"""
         byte_range = headers.get('Range', headers.get('range'))
         match = None if not byte_range else re.match(r'bytes=(?P<start>\d+)-(?P<end>\d+)?', byte_range)
         if not match:

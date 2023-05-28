@@ -1,7 +1,6 @@
 """Content Directory"""
 import asyncio
-from time import time
-from typing import Dict, Any, List, Optional, Callable, Awaitable
+from typing import Dict, Optional, Callable, Awaitable
 from collections import defaultdict
 import xml.etree.ElementTree as ET
 
@@ -88,10 +87,9 @@ class ContentDirectoryService(UpnpServerService):
             else:
                 update_id = self.state_variable('SystemUpdateID').value
         except Exception as _e:
-            raise
             raise UpnpActionError(
                 error_code=UpnpActionErrorCode.INVALID_ACTION, error_desc=str(_e)
-            )
+            ) from _e
         return {
             "Result": self.template_var("A_ARG_TYPE_Result", xml),
             "NumberReturned": self.template_var("A_ARG_TYPE_Count", len(parent.children)),

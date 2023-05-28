@@ -34,5 +34,5 @@ async def scan_paths(paths: List[str], root_item, device):
                     child = AudioItem(item, full_path)
                 else:
                     continue
-                logging.debug(f"Adding {item}: {full_path}")
+                logging.debug("Adding %s: %s", item, full_path)
                 yield child

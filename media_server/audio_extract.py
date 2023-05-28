@@ -2,10 +2,11 @@
 import os
 import re
 import hashlib
-import subprocess
+import logging
 import time
 import asyncio
 import sqlite3
+# pylint: disable=broad-except
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FFPROBE = os.path.join(BASE_DIR, "ffprobe")
@@ -29,11 +30,13 @@ class AudioExtractor:
             "cache TEXT"
             ")")
     def get_item(self, path):
+        """Get mediatype and path for extracted audio"""
         for row in self._cur.execute("SELECT mediatype, cache FROM media WHERE path = ?", (path,)):
             return row
         return None, None
 
     async def get_path(self, path):
+        """Get path to audio file.  Create if needed"""
         audio_type, cache_path = self.get_item(path)
         if path in self._running:
             try:
@@ -43,9 +46,11 @@ class AudioExtractor:
                 pass
         if not cache_path or not os.path.exists(cache_path):
             cache_path = await self.extract_audio(path, audio_type)
+        os.utime(cache_path)  # keep on top of the LRU list
         return cache_path
 
     async def extract_audio(self, path, audio_type):
+        """Extract audio-stream from video file"""
         if self._cleanup:
             if self._cleanup.done():
                 await self._cleanup
@@ -70,15 +75,18 @@ class AudioExtractor:
         except Exception as _e:
             logging.error("Failed to extract audio for %s: %s", path, _e)
         return None
+
     async def run_cleanup(self):
+        """Cleanup LRU files in cache dir"""
         paths = sorted(os.scandir(self._cache_dir), key=lambda x: x.stat().st_mtime)
         while sum(_.stat().st_size for _ in paths) > self._max_cache_size:
             item = paths.pop()
             if item.stat().st_mtime > time.time() - 600:
                 break
             os.unlink(item.path)
- 
+
     async def probe(self, path):
+        """Probe Video file to get audio format"""
         audio_type, _ = self.get_item(path)
         if audio_type:
             return audio_type
@@ -88,9 +96,9 @@ class AudioExtractor:
                 _stdout_data, stderr_data = await proc.communicate()
                 await proc.wait()
             except Exception as _e:
-                logging.error("Failed to run ffprobe %s: %s", self._file_path, _e)
+                logging.error("Failed to run ffprobe %s: %s", path, _e)
         if proc.returncode != 0:
-            logging.error("Failed to run ffprobe %s: %s", self._file_path, stderr_data)
+            logging.error("Failed to run ffprobe %s: %s", path, stderr_data)
             return
         _match = re.search(r'Stream #.*: Audio: (\S+)', stderr_data.decode(), re.MULTILINE)
         if _match:
@@ -102,4 +110,3 @@ class AudioExtractor:
     def _get_cache_file(self, path, audio_type):
         return os.path.join(self._cache_dir,
             os.path.basename(path) + "." + hashlib.sha256(os.path.dirname(path).encode()).hexdigest()[:8] + "." + audio_type)
-
