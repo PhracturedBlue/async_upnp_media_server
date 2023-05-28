@@ -1,0 +1,3 @@
+# async-upnp-client
+async-upnp-client @ git+https://github.com/PhracturedBlue/async_upnp_client.git@server
+async-generator
