@@ -198,6 +198,8 @@ class TranscodeItem(AudioItem):
             self._audioext = await self._probe
             self._probe = None
             self._mimetype, _ = mimetypes.guess_type(f"media_file.{self._audioext}", strict=False)
+            if not self._mimetype:
+                self._mimetype = f"audio/{self._audioext}"
         return await super().xml()
 
 def get_url(item: BaseItem, mediatype: str) -> str:

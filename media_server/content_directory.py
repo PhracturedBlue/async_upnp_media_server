@@ -90,6 +90,7 @@ class ContentDirectoryService(UpnpServerService):
             else:
                 update_id = self.state_variable('SystemUpdateID').value
         except Exception as _e:
+            logging.exception("Failed to browse %s", ObjectID)
             raise UpnpActionError(
                 error_code=UpnpActionErrorCode.INVALID_ACTION, error_desc=str(_e)
             ) from _e

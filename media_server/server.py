@@ -79,7 +79,9 @@ class MediaServerDevice(UpnpServerDevice):
         item = self._content_dir.get_item(object_id)
         if not item:
             raise web.HTTPNotFound
-        assert isinstance(item, AudioItem)
+        if not isinstance(item, AudioItem):
+            logging.error("Tried to query  %s media item: %s", item.__class__.name, item.name)
+            raise web.HTTPNotFound
         if request.method == 'HEAD':
             raise web.HTTPOk()
 
@@ -99,7 +101,8 @@ class MediaServerDevice(UpnpServerDevice):
         mime_type = item.mime_type
         end = item.size if end is None else end
         size = str(end-start)
-        assert mime_type
+        if not mime_type:
+            raise web.HTTPNotFound
 
         headers: dict[str, str] = {'Content-Length': size, 'Content-Type': mime_type, 'Accept-Ranges': 'bytes',
                    # DLNA.ORG_OP = Time range capable / Byte range capable

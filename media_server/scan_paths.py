@@ -26,6 +26,7 @@ async def scan_paths(paths: List[str], root_item: DirectoryItem, device: UpnpDev
             item = DirectoryItem(parent, root)
             dir_cache[root] = item
             yield item
+
             for file in files:
                 full_path = os.path.join(root, file)
                 mime_type, _ = mimetypes.guess_type(file, strict=False)
@@ -38,5 +39,5 @@ async def scan_paths(paths: List[str], root_item: DirectoryItem, device: UpnpDev
                     child = AudioItem(item, full_path)
                 else:
                     continue
-                logging.debug("Adding %s: %s", item, full_path)
+                logging.debug("Adding %s: %s", child.__class__.__name__, full_path)
                 yield child
