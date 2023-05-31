@@ -10,6 +10,9 @@ from typing import Optional, List
 from .namespace import get_ns
 from .audio_extract import AudioExtractor
 
+mimetypes.add_type('audio/ac3', '.eac3')
+mimetypes.add_type('audio/ac3', '.dts')
+
 class BaseItem:
     """Base item definition"""
     base_url:Optional[str] = None
@@ -29,7 +32,7 @@ class BaseItem:
             self._date = datetime.fromtimestamp(0)
             self._size = 0
         self._type = itemtype
-        self._cover = None
+        self._cover: Optional[str] = None
         self._id = BaseItem.next_id
         BaseItem.next_id += 1
 
@@ -48,6 +51,11 @@ class BaseItem:
     def name(self) -> str:
         """Item name"""
         return os.path.basename(self._path or "")
+
+    @property
+    def cover(self) -> Optional[str]:
+        """Cover Art"""
+        return self._cover
 
     async def get_path(self) -> str:
         """Item full path"""
@@ -73,7 +81,8 @@ class BaseItem:
             #    or
             #    <res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_TN;DLNA.ORG_OP=01;DLNA.ORG_CI=0">
             #    (or both)
-            cover = ET.SubElement(root, 'upnp:albumArtURI', {'dlna:profileID': 'JPEG_TN'})
+            cover = ET.SubElement(root, 'upnp:albumArtURI',
+                {'dlna:profileID': 'PNG_TN' if self._cover.endswith('png') else 'JPG_TN'})
             cover.attrib.update(get_ns('dlna'))
             cover.text = get_url(self, "cover")
         return root
@@ -166,6 +175,7 @@ class TranscodeItem(AudioItem):
         self._mimetype: Optional[str] = None
         self._audioext: Optional[str] = None
         self._size: Optional[int] = None
+        self._cover = "default.png"
 
     async def get_path(self) -> str:
         """Get full-path to item"""

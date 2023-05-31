@@ -10,7 +10,7 @@ import argparse
 from time import time
 from functools import partial
 from http import HTTPStatus
-from typing import cast, Callable, Type, Tuple, Optional
+from typing import cast, Callable, Type, Tuple, Optional, Union
 from aiohttp import web
 from multidict import CIMultiDictProxy
 
@@ -72,18 +72,22 @@ class MediaServerDevice(UpnpServerDevice):
         self.audio_extractor = audio_extractor_cls()
 
     @_routes.get(r"/content/{object_id:\d+}/{media_type}")   # type: ignore [arg-type]
-    async def handle_media(self, request: web.Request) -> web.Response:
+    async def handle_media(self, request: web.Request) -> Union[web.Response, web.FileResponse]:
         """URL handler for streaming media"""
         object_id = int(request.match_info['object_id'])
-        # media_type = request.match_info['media_type']
+        media_type = request.match_info['media_type']
         item = self._content_dir.get_item(object_id)
         if not item:
             raise web.HTTPNotFound
         if not isinstance(item, AudioItem):
-            logging.error("Tried to query  %s media item: %s", item.__class__.name, item.name)
+            logging.error("Tried to query  %s media item: %s", item.__class__.__name__, item.name)
             raise web.HTTPNotFound
         if request.method == 'HEAD':
             raise web.HTTPOk()
+        if media_type == 'cover':
+            if item.cover:
+                return web.FileResponse(item.cover)
+            raise web.HTTPNotFound
 
         _path = await item.get_path()
 
@@ -111,6 +115,7 @@ class MediaServerDevice(UpnpServerDevice):
         if part:
             headers['Content-Range'] = f'bytes {start}-{end-1}/{size}'
         print(headers)
+        logging.info("Playing: %s", item.name)
         response = web.Response(
             body=generate(),
             status=HTTPStatus.PARTIAL_CONTENT if part else HTTPStatus.OK, headers=headers)

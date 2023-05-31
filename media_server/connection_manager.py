@@ -22,7 +22,8 @@ class ConnectionManagerService(UpnpServerService):
         xml=ET.Element("server_service"),
     )
     STATE_VARIABLE_DEFINITIONS = {
-        "SourceProtocolInfo": create_event_var("string"),
+        "SourceProtocolInfo": create_event_var("string",
+            default=','.join([f'http-get:*:audio/{_}:*' for _ in ('mpeg', 'ac3', 'aac', 'ogg', 'eac3')])),
         "SinkProtocolInfo": create_event_var("string"),
         "CurrentConnectionIDs": create_event_var("string"),
         "A_ARG_TYPE_ConnectionStatus": create_template_var("string"),
@@ -79,3 +80,36 @@ class ConnectionManagerService(UpnpServerService):
             "ProtocolInfo": self.template_var("A_ARG_TYPE_ProtocolInfo", ""),
             "PeerConnectionManager": self.template_var("A_ARG_TYPE_ConnectionManager", ""),
             }
+    @callable_action(
+        name="PrepareForConnection",
+        in_args={
+            'RemoteProtocolInfo': 'A_ARG_TYPE_ProtocolInfo',
+            'PeerConnectionManager': 'A_ARG_TYPE_ConnectionManager',
+            'PeerConnectionID': 'A_ARG_TYPE_ConnectionID',
+            'Direction': 'A_ARG_TYPE_Direction',
+            },
+        out_args={
+            'ConnectionID': 'A_ARG_TYPE_ConnectionID',
+            'AVTransportID': 'A_ARG_TYPE_AVTransportID',
+            'ResID': 'A_ARG_TYPE_ResID',
+        },
+    )
+    async def prepare_for_connection(self,
+            RemoteProtocolInfo: str, PeerConnectionManager: str,
+            PeerConnectionID: int, Direction: str) -> Dict[str, UpnpStateVariable]:
+        """Get current conntion information"""
+        return {
+            'ConnectionID': self.template_var('A_ARG_TYPE_ConnectionID', 1),
+            'AVTransportID': self.template_var('A_ARG_TYPE_AVTransportID', 1),
+            'ResID': self.template_var('A_ARG_TYPE_ResID', 1),
+            }
+    @callable_action(
+        name="ConnectionCompleted",
+        in_args={
+            'ConnectionID': 'A_ARG_TYPE_ConnectionID',
+        },
+        out_args = {},
+    )
+    async def connection_completed(self, ConnectionID: int) -> Dict[str, UpnpStateVariable]:
+        """Get current conntion information"""
+        return {}

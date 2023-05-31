@@ -1,7 +1,7 @@
 # Media Server
 A UPnp/DLNA media server written using async python.
 
-Based on the HomeAssistant DLNA module: async_upnp_client [https://github.com/StevenLooman/async_upnp_client]
+Based on the HomeAssistant DLNA module: [async_upnp_client](https://github.com/StevenLooman/async_upnp_client)
 and https://github.com/shaolo1/VideoServer.git
 
 This is currently an audio-only media server that has the scpecific capability to extract and serve audio
@@ -25,3 +25,5 @@ pip install pylint mypy
 Run:
   pylint server.py media_server
   mypy --disallow-untyped-defs server.py media_server
+
+Icons from [Falticon](https://www.flaticon.com/free-icons/podcast)
